@@ -1,0 +1,1 @@
+import 'dart:io'; abstract class ChatMediaRepository{Future<String> uploadChatImage({required String roomId,required String senderId,required File image}); Future<void> deleteChatImageByUrl(String imageUrl);}

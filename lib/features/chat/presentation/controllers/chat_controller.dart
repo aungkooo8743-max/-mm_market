@@ -1,0 +1,21 @@
+import 'dart:io';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/errors/app_exception.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../domain/entities/chat_message.dart';
+import '../../domain/repositories/chat_repository.dart';
+import '../providers/chat_providers.dart';
+import 'chat_controller_state.dart';
+
+final chatControllerProvider=NotifierProvider<ChatController,ChatControllerState>(ChatController.new);
+class ChatController extends Notifier<ChatControllerState>{ late final ChatRepository _repo; @override ChatControllerState build(){_repo=ref.read(chatRepositoryProvider);return const ChatControllerState();}
+  void setActiveRoom(String roomId)=>state=state.setActiveRoom(roomId);
+  void setSelectedImage(File image)=>state=state.setSelectedImage(image);
+  void clearSelectedImage()=>state=state.clearSelectedImage();
+  Future<String?> createOrGetRoom({required String productId,required String sellerId}) async{final user=ref.read(currentUserProvider); if(user==null){state=state.failure('Chat အသုံးပြုရန် Login ဝင်ရန်လိုအပ်ပါသည်');return null;} if(user.uid==sellerId){state=state.failure('ကိုယ့် Product ကို ကိုယ်တိုင် Message ပို့လို့မရပါ');return null;} state=state.sending(); try{final roomId=await _repo.createOrGetRoom(productId:productId,buyerId:user.uid,sellerId:sellerId); state=state.setActiveRoom(roomId).idle(); ref.invalidate(myChatRoomsProvider); return roomId;}catch(e){state=state.failure(_errorMessage(e));return null;}}
+  Future<void> sendTextMessage({required String chatRoomId,required String text}) async{final user=ref.read(currentUserProvider); final content=text.trim(); if(user==null||content.isEmpty)return; final localId='local_${DateTime.now().microsecondsSinceEpoch}'; final msg=ChatMessage(id:localId,chatRoomId:chatRoomId,senderId:user.uid,text:content,type:ChatMessageType.text,status:ChatMessageStatus.sending,createdAt:DateTime.now(),updatedAt:DateTime.now()); state=state.addOptimisticMessage(msg).sending(); try{await _repo.sendTextMessage(chatRoomId:chatRoomId,senderId:user.uid,text:content); state=state.removeOptimisticMessage(localId).idle(); ref.invalidate(chatMessagesProvider(chatRoomId));ref.invalidate(chatRoomProvider(chatRoomId));ref.invalidate(myChatRoomsProvider);}catch(e){state=state.markOptimisticMessageFailed(localId).failure(_errorMessage(e));}}
+  Future<void> sendImageMessage({required String chatRoomId,String? caption,File? image}) async{final user=ref.read(currentUserProvider); final selected=image??state.selectedImage; if(user==null)return; if(selected==null){state=state.failure('Image ရွေးပါ');return;} final localId='local_img_${DateTime.now().microsecondsSinceEpoch}'; final text=caption?.trim()??''; final msg=ChatMessage(id:localId,chatRoomId:chatRoomId,senderId:user.uid,text:text,type:ChatMessageType.image,status:ChatMessageStatus.sending,localImagePath:selected.path,createdAt:DateTime.now(),updatedAt:DateTime.now()); state=state.addOptimisticMessage(msg).uploading(); try{await _repo.sendImageMessage(chatRoomId:chatRoomId,senderId:user.uid,image:selected,caption:text.isEmpty?null:text); state=state.removeOptimisticMessage(localId).copyWith(clearSelectedImage:true).idle(); ref.invalidate(chatMessagesProvider(chatRoomId));ref.invalidate(chatRoomProvider(chatRoomId));ref.invalidate(myChatRoomsProvider);}catch(e){state=state.markOptimisticMessageFailed(localId).failure(_errorMessage(e));}}
+  Future<void> markAsRead(String chatRoomId) async{final user=ref.read(currentUserProvider); if(user==null)return; try{await _repo.markAsRead(chatRoomId:chatRoomId,userId:user.uid); ref.invalidate(chatRoomProvider(chatRoomId)); ref.invalidate(myChatRoomsProvider); ref.invalidate(unreadChatCountProvider);}catch(_){}}
+  Future<void> deleteMessage({required String chatRoomId,required String messageId}) async{final user=ref.read(currentUserProvider); if(user==null)return; try{await _repo.deleteMessage(chatRoomId:chatRoomId,messageId:messageId,requesterId:user.uid); ref.invalidate(chatMessagesProvider(chatRoomId));}catch(e){state=state.failure(_errorMessage(e));}}
+  String _errorMessage(Object e)=>e is AppException?e.message:e.toString();
+}

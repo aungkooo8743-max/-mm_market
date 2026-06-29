@@ -1,0 +1,1 @@
+import 'package:flutter/material.dart'; class ReportTargetHeader extends StatelessWidget{final String title; final String subtitle; const ReportTargetHeader({super.key,required this.title,required this.subtitle}); @override Widget build(BuildContext context)=>ListTile(leading:const Icon(Icons.flag_outlined),title:Text(title),subtitle:Text(subtitle));}

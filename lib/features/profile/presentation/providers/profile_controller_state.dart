@@ -1,0 +1,1 @@
+class ProfileControllerState{final bool isLoading,success; final String? errorMessage; const ProfileControllerState({this.isLoading=false,this.success=false,this.errorMessage}); ProfileControllerState copyWith({bool? isLoading,bool? success,String? errorMessage})=>ProfileControllerState(isLoading:isLoading??this.isLoading,success:success??this.success,errorMessage:errorMessage);}

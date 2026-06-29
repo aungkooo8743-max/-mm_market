@@ -1,0 +1,1 @@
+import 'package:flutter/material.dart'; class ChatEmptyView extends StatelessWidget{const ChatEmptyView({super.key}); @override Widget build(BuildContext context)=>const Center(child:Text('No messages yet'));}

@@ -1,0 +1,2 @@
+import 'package:flutter/material.dart'; import '../../domain/entities/review.dart';
+class RatingSelector extends StatelessWidget{final ReviewRating value; final ValueChanged<ReviewRating> onChanged; const RatingSelector({super.key,required this.value,required this.onChanged}); @override Widget build(BuildContext context)=>Row(mainAxisAlignment:MainAxisAlignment.center,children:ReviewRating.values.map((r)=>IconButton(onPressed:()=>onChanged(r),icon:Icon(r.value<=value.value?Icons.star:Icons.star_border,color:r.value<=value.value?Colors.amber:null))).toList());}

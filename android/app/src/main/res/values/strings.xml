@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MM Market</string>
+    <!-- Facebook SDK credentials — configured for production -->
+    <string name="facebook_app_id">971595999048926</string>
+    <string name="facebook_client_token">73f3caa588d0f60867fbba7bdde98455</string>
+    <string name="fb_login_protocol_scheme">fb971595999048926</string>
+</resources>

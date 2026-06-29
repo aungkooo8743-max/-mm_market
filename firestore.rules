@@ -1,0 +1,234 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MM Market — Hardened Firestore Security Rules  v3.3.7
+// Last updated: 2026-06-29
+// Fix: Allow phone-only users (no email) to create their profile document.
+//
+// Design principles:
+//  1. Default-deny: every path is locked unless explicitly opened.
+//  2. Auth-gated: all writes require a verified Firebase Auth session.
+//  3. Owner-only mutations: users may only modify their own documents.
+//  4. Field-level validation: incoming data is type-checked and bounded.
+//  5. Admin escalation: a server-side `role == 'admin'` flag unlocks
+//     privileged operations (ban, feature, delete any product, etc.).
+// ─────────────────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Shared helpers ────────────────────────────────────────────────────────
+
+    /// True when the caller is signed in.
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    /// True when the caller's UID matches the given id.
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    /// True when the caller has the 'admin' role stored in their user doc.
+    function isAdmin() {
+      return isAuth() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    /// True when the caller is either the owner or an admin.
+    function isOwnerOrAdmin(uid) {
+      return isOwner(uid) || isAdmin();
+    }
+
+    /// Validates that a string field is non-empty and within [min, max] chars.
+    function validStr(field, min, max) {
+      return field is string && field.size() >= min && field.size() <= max;
+    }
+
+    /// Validates that a numeric field is within [lo, hi].
+    function validNum(field, lo, hi) {
+      return field is number && field >= lo && field <= hi;
+    }
+
+    // ── /users/{userId} ───────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Anyone authenticated may read public profiles.
+      allow read: if isAuth();
+
+      // Only the owner may create their own profile document.
+      // Phone-only users (OTP login) may not have email or displayName initially.
+      allow create: if isOwner(userId)
+        && request.resource.data.keys().hasAll(['createdAt']);
+        // Note: email/displayName are optional for phone-auth users.
+
+      // Owner may update their own profile; admins may update any profile
+      // (e.g., to set role, isBanned).  Immutable fields are protected.
+      allow update: if isOwnerOrAdmin(userId)
+        // Prevent UID spoofing — the stored uid must not change.
+        && (!request.resource.data.keys().hasAny(['uid'])
+            || request.resource.data.uid == userId)
+        // Prevent self-promotion to admin role.
+        && (isAdmin()
+            || !request.resource.data.keys().hasAny(['role']));
+
+      // Only admins may hard-delete user documents.
+      allow delete: if isAdmin();
+    }
+
+    // ── /products/{productId} ─────────────────────────────────────────────────
+    match /products/{productId} {
+      // Unauthenticated users may read active (non-deleted) listings.
+      allow read: if resource.data.status != 'deleted'
+                  || isOwnerOrAdmin(resource.data.sellerId);
+
+      // Authenticated users may create a product on their own behalf.
+      allow create: if isAuth()
+        && request.resource.data.sellerId == request.auth.uid
+        && validStr(request.resource.data.title, 2, 120)
+        && validStr(request.resource.data.description, 5, 3000)
+        && validNum(request.resource.data.price, 0, 999999999)
+        && request.resource.data.keys().hasAll([
+             'sellerId', 'title', 'description', 'category',
+             'condition', 'status', 'price', 'city', 'township', 'createdAt'
+           ]);
+
+      // Only the seller or an admin may update a product.
+      allow update: if isOwnerOrAdmin(resource.data.sellerId)
+        // Seller cannot change the sellerId to impersonate another user.
+        && request.resource.data.sellerId == resource.data.sellerId
+        // Validate mutable fields when present.
+        && (!request.resource.data.keys().hasAny(['title'])
+            || validStr(request.resource.data.title, 2, 120))
+        && (!request.resource.data.keys().hasAny(['price'])
+            || validNum(request.resource.data.price, 0, 999999999));
+
+      // Only seller or admin may delete (soft-delete via status field).
+      allow delete: if isOwnerOrAdmin(resource.data.sellerId);
+    }
+
+    // ── /chats/{chatId} ───────────────────────────────────────────────────────
+    match /chats/{chatId} {
+      // Only participants may read a chat room.
+      allow read: if isAuth()
+        && request.auth.uid in resource.data.participantIds;
+
+      // Authenticated users may create a chat room they participate in.
+      allow create: if isAuth()
+        && request.auth.uid in request.resource.data.participantIds
+        && request.resource.data.participantIds.size() == 2;
+
+      // Only participants may update (e.g., lastMessageAt, unread counts).
+      allow update: if isAuth()
+        && request.auth.uid in resource.data.participantIds
+        // participantIds list must not change after creation.
+        && request.resource.data.participantIds == resource.data.participantIds;
+
+      // No hard-deletes on chat rooms.
+      allow delete: if false;
+
+      // ── /chats/{chatId}/messages/{messageId} ─────────────────────────────
+      match /messages/{messageId} {
+        // Only participants of the parent chat may read messages.
+        allow read: if isAuth()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantIds;
+
+        // Only the sender may create a message.
+        allow create: if isAuth()
+          && request.resource.data.senderId == request.auth.uid
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantIds
+          && validStr(request.resource.data.content, 1, 4000);
+
+        // Messages are immutable — no updates or deletes.
+        allow update, delete: if false;
+      }
+    }
+
+    // ── /favorites/{favoriteId} ───────────────────────────────────────────────
+    match /favorites/{favoriteId} {
+      // Users may only read their own favorites.
+      allow read: if isOwner(resource.data.userId);
+
+      // Users may create favorites for themselves only.
+      allow create: if isAuth()
+        && request.resource.data.userId == request.auth.uid;
+
+      // Users may delete their own favorites.
+      allow delete: if isOwner(resource.data.userId);
+
+      // Favorites are not updatable.
+      allow update: if false;
+    }
+
+    // ── /reviews/{reviewId} ───────────────────────────────────────────────────
+    match /reviews/{reviewId} {
+      // Anyone authenticated may read reviews.
+      allow read: if isAuth();
+
+      // Authenticated users may write a review as themselves.
+      allow create: if isAuth()
+        && request.resource.data.reviewerId == request.auth.uid
+        && validNum(request.resource.data.rating, 1, 5)
+        && validStr(request.resource.data.comment, 0, 1000);
+
+      // Only the reviewer or admin may update/delete.
+      allow update, delete: if isOwnerOrAdmin(resource.data.reviewerId);
+    }
+
+    // ── /reports/{reportId} ───────────────────────────────────────────────────
+    match /reports/{reportId} {
+      // Only admins may read reports.
+      allow read: if isAdmin()
+        || isOwner(resource.data.reporterId);
+
+      // Authenticated users may file a report as themselves.
+      allow create: if isAuth()
+        && request.resource.data.reporterId == request.auth.uid
+        && validStr(request.resource.data.reason, 5, 500);
+
+      // Only admins may update/delete reports.
+      allow update, delete: if isAdmin();
+    }
+
+    // ── /notifications/{notificationId} ──────────────────────────────────────
+    match /notifications/{notificationId} {
+      // Users may only read their own notifications.
+      allow read: if isOwner(resource.data.recipientId);
+
+      // Only backend (admin SDK) or admins may create notifications.
+      allow create: if isAdmin();
+
+      // Users may mark their own notifications as read.
+      allow update: if isOwner(resource.data.recipientId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'readAt']);
+
+      // Users may delete their own notifications.
+      allow delete: if isOwner(resource.data.recipientId);
+    }
+
+    // ── /recent_searches/{userId} ─────────────────────────────────────────────
+    match /recent_searches/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // ── /trending_searches/{docId} ────────────────────────────────────────────
+    match /trending_searches/{docId} {
+      // Anyone may read trending searches (public discovery feature).
+      allow read: if true;
+      // Only admins / backend may write trending data.
+      allow write: if isAdmin();
+    }
+
+    // ── /categories/{categoryId} ─────────────────────────────────────────────
+    match /categories/{categoryId} {
+      // Public read; admin-only write.
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ── Default deny — catch-all ──────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

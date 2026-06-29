@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "805591336873",
+    "project_id": "mm-market-app",
+    "storage_bucket": "mm-market-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:805591336873:android:b8796af8f245e58d3a26b8",
+        "android_client_info": {
+          "package_name": "com.mmmarket.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "805591336873-v0hbfi026ijro6e3bbhug3dohilcptci.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mmmarket.app",
+            "certificate_hash": "2df0d227ec04a198efb499ad00156ae19c9d5610"
+          }
+        },
+        {
+          "client_id": "805591336873-v0hbfi026ijro6e3bbhug3dohilcptci.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mmmarket.app",
+            "certificate_hash": "906cb63a5d520cf1ccd08ebc8ba00e2ed6c0cd7a"
+          }
+        },
+        {
+          "client_id": "805591336873-o9a5i1nufibbb89gjhcqv29pegdnm2ma.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCH0nILbnzaGOVoPeld7bRQ5_yTszoTh8I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "805591336873-o9a5i1nufibbb89gjhcqv29pegdnm2ma.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

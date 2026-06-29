@@ -1,0 +1,1 @@
+import 'package:flutter/material.dart'; import 'package:go_router/go_router.dart'; import '../../../../app/router/app_router.dart'; class HomeSearchBar extends StatelessWidget{const HomeSearchBar({super.key}); @override Widget build(BuildContext context)=>SearchBar(hintText:'Search products...',leading:const Icon(Icons.search),onTap:()=>context.push(AppRoutes.search));}

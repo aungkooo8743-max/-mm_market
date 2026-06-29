@@ -1,0 +1,2 @@
+import 'package:flutter/material.dart'; import '../../domain/entities/app_notification.dart';
+class NotificationTile extends StatelessWidget{final AppNotification notification; final VoidCallback onTap; const NotificationTile({super.key,required this.notification,required this.onTap}); @override Widget build(BuildContext context)=>ListTile(leading:const CircleAvatar(child:Icon(Icons.notifications_outlined)),title:Text(notification.title),subtitle:Text(notification.body),trailing:notification.isRead?null:const Badge(),onTap:onTap);}

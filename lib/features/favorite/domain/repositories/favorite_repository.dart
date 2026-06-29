@@ -1,0 +1,2 @@
+import '../entities/favorite.dart';
+abstract class FavoriteRepository { Stream<List<Favorite>> watchMyFavorites(String userId); Future<bool> isFavorite({required String userId,required String productId}); Future<void> addFavorite({required String userId,required String productId}); Future<void> removeFavorite({required String userId,required String productId}); Future<void> toggleFavorite({required String userId,required String productId}); }

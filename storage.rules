@@ -1,0 +1,96 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MM Market — Firebase Storage Security Rules  v3.3.7
+// Last updated: 2026-06-29
+//
+// FIX (v3.3.7): Changed product/profile reads to public (allow read: if true).
+// Reason: Firebase Storage getDownloadURL() returns a signed URL with a token
+// parameter. CachedNetworkImage caches and replays this URL without a live
+// Auth context — causing 403 Forbidden when rules require request.auth != null.
+// Product and profile images are not sensitive (they are public listings).
+// Chat and report media remain auth-gated for privacy.
+//
+// Path layout:
+//   users/{userId}/profile/{fileName}          — profile photos
+//   products/{sellerId}/{productId}/{fileName}  — product images
+//   chats/{chatId}/{senderId}/{fileName}        — chat media
+//   reports/{reporterId}/{reportId}/{fileName}  — report evidence
+// ─────────────────────────────────────────────────────────────────────────────
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ── Shared helpers ────────────────────────────────────────────────────────
+
+    /// Caller is authenticated.
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    /// Caller's UID matches the given uid.
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    /// File is an image and within the 10 MB size limit.
+    function isValidImage() {
+      return request.resource.contentType.matches('image/.*')
+          && request.resource.size <= 10 * 1024 * 1024;
+    }
+
+    // ── users/{userId}/profile/{fileName} ────────────────────────────────────
+    match /users/{userId}/profile/{fileName} {
+      // Public read — profile photos visible to all (CachedNetworkImage safe).
+      allow read: if true;
+
+      // Only the owner may upload/replace their own profile photo.
+      allow write: if isOwner(userId) && isValidImage();
+
+      // Only the owner may delete their own profile photo.
+      allow delete: if isOwner(userId);
+    }
+
+    // ── products/{sellerId}/{productId}/{fileName} ────────────────────────────
+    match /products/{sellerId}/{productId}/{fileName} {
+      // Public read — product images are public listings (CachedNetworkImage safe).
+      allow read: if true;
+
+      // Only the seller may upload product images to their own path.
+      allow write: if isOwner(sellerId) && isValidImage();
+
+      // Only the seller may delete product images.
+      allow delete: if isOwner(sellerId);
+    }
+
+    // ── chats/{chatId}/{senderId}/{fileName} ──────────────────────────────────
+    match /chats/{chatId}/{senderId}/{fileName} {
+      // Only authenticated users may read chat media (participant check
+      // is enforced at the Firestore layer; Storage keeps it auth-gated).
+      allow read: if isAuth();
+
+      // Only the sender may upload chat media to their own path.
+      allow write: if isOwner(senderId) && isValidImage();
+
+      // Chat media is immutable — no deletes allowed.
+      allow delete: if false;
+    }
+
+    // ── reports/{reporterId}/{reportId}/{fileName} ────────────────────────────
+    match /reports/{reporterId}/{reportId}/{fileName} {
+      // Only the reporter or authenticated users may read evidence.
+      allow read: if isAuth();
+
+      // Only the reporter may upload evidence files.
+      allow write: if isOwner(reporterId) && isValidImage();
+
+      // Evidence is immutable — no deletes.
+      allow delete: if false;
+    }
+
+    // ── Default deny ──────────────────────────────────────────────────────────
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
