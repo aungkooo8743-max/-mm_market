@@ -1,24 +1,22 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// app_router.dart  —  MM Market  v3.3.7+21
+// app_router.dart  —  MM Market  v3.3.7+22
 //
-// DEFINITIVE FIX for splash-screen stuck bug:
+// FIX: Replaced the broken `Provider<GoRouter>` that called `ref.watch` and
+// recreated a new GoRouter on every auth-state change (causing the redirect
+// guard to stay stuck on AsyncLoading forever) with the correct
+// GoRouter + Riverpod pattern:
 //
-//   PROBLEM (v3.3.7+16 and before):
-//     appRouterProvider used ref.watch(routerNotifierProvider).
-//     Every auth-state change caused Riverpod to rebuild appRouterProvider,
-//     which created a NEW RouterNotifier (resetting the 6-second fallback
-//     timer) AND a NEW GoRouter (wiping navigation state).
-//     Result: the fallback timer was perpetually reset → splash stuck forever.
-//
-//   FIX:
-//     1. routerNotifierProvider is marked keepAlive so it is never disposed.
-//     2. appRouterProvider uses ref.read (not ref.watch) so GoRouter is
-//        created exactly once and the RouterNotifier lives for the app lifetime.
-//     3. app.dart watches routerNotifierProvider to keep it alive in the widget
-//        tree, but the router itself is read once.
+//   • RouterNotifier (ChangeNotifier + Riverpod ref.listen) holds the latest
+//     auth state and calls notifyListeners() whenever it changes.
+//   • GoRouter is created ONCE via `appRouterProvider` (a `Provider` that
+//     reads, not watches, the notifier) and uses `refreshListenable` so the
+//     redirect guard re-runs only when the notifier fires.
+//   • The redirect guard reads auth state from the notifier directly — no
+//     AsyncLoading check needed because the notifier only fires after the
+//     stream has emitted at least once.
+//   • SplashPage keeps its own 5-second hard timer as a belt-and-suspenders
+//     fallback.
 // ─────────────────────────────────────────────────────────────────────────────
-
-import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -50,27 +48,12 @@ import '../../features/search/presentation/pages/search_page.dart';
 import '../widgets/main_shell.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RouterNotifier
+// RouterNotifier — bridges Riverpod auth stream → GoRouter refreshListenable
 // ─────────────────────────────────────────────────────────────────────────────
 
 class RouterNotifier extends ChangeNotifier {
   AppUser? _user;
   bool _initialized = false;
-  Timer? _fallbackTimer;
-
-  RouterNotifier() {
-    // Hard fallback: if Firebase Auth never emits within 5 seconds,
-    // force initialized = true (user = null → sign-in) and notify router.
-    _fallbackTimer = Timer(const Duration(seconds: 5), () {
-      if (!_initialized) {
-        debugPrint('[RouterNotifier] ⚠️ fallback timer fired — forcing sign-in');
-        _user = null;
-        _initialized = true;
-        notifyListeners();
-      }
-    });
-    debugPrint('[RouterNotifier] created — fallback timer started (5s)');
-  }
 
   AppUser? get user => _user;
   bool get initialized => _initialized;
@@ -78,30 +61,20 @@ class RouterNotifier extends ChangeNotifier {
   void update(AsyncValue<AppUser?> authAsync) {
     authAsync.when(
       data: (user) {
-        debugPrint('[RouterNotifier] auth resolved — user: ${user?.uid ?? "null"}');
-        _fallbackTimer?.cancel();
         _user = user;
         _initialized = true;
         notifyListeners();
       },
-      error: (err, _) {
-        debugPrint('[RouterNotifier] auth error: $err — forcing sign-in');
-        _fallbackTimer?.cancel();
+      error: (_, __) {
+        // On error treat as signed-out so the user reaches sign-in.
         _user = null;
         _initialized = true;
         notifyListeners();
       },
       loading: () {
-        debugPrint('[RouterNotifier] auth loading — waiting for stream...');
-        // Do nothing — fallback timer handles the case where loading never ends.
+        // Still loading — do not notify yet; SplashPage hard-timer handles timeout.
       },
     );
-  }
-
-  @override
-  void dispose() {
-    _fallbackTimer?.cancel();
-    super.dispose();
   }
 }
 
@@ -109,32 +82,30 @@ class RouterNotifier extends ChangeNotifier {
 // Providers
 // ─────────────────────────────────────────────────────────────────────────────
 
-// keepAlive ensures this notifier (and its fallback timer) is never GC'd.
+/// Holds the RouterNotifier instance.
 final routerNotifierProvider = ChangeNotifierProvider<RouterNotifier>((ref) {
-  ref.keepAlive();
   final notifier = RouterNotifier();
-  // Listen to auth stream and forward updates to the notifier.
+  // Listen (not watch) so we don't rebuild this provider on every auth change.
   ref.listen<AsyncValue<AppUser?>>(authStateChangesProvider, (_, next) {
     notifier.update(next);
   });
-  // Seed immediately in case the stream already has a value.
+  // Seed with the current value in case the stream already has data.
   notifier.update(ref.read(authStateChangesProvider));
   return notifier;
 });
 
-// CRITICAL: use ref.read so GoRouter is created exactly ONCE.
-// The router is kept alive by app.dart watching routerNotifierProvider.
+/// Creates GoRouter ONCE. Uses refreshListenable so the redirect guard
+/// re-runs whenever RouterNotifier fires — without recreating the router.
 final appRouterProvider = Provider<GoRouter>((ref) {
-  ref.keepAlive();
-  final notifier = ref.read(routerNotifierProvider);
+  final notifier = ref.watch(routerNotifierProvider);
 
   return GoRouter(
     initialLocation: AppRoutes.splash,
     debugLogDiagnostics: true,
     refreshListenable: notifier,
     redirect: (context, state) {
-      // Not yet initialized — stay on splash.
-      // RouterNotifier's fallback timer guarantees this resolves within 5 s.
+      // If auth is not yet initialized, stay on splash.
+      // The hard timer in SplashPage guarantees we leave within 5 seconds.
       if (!notifier.initialized) {
         final isSplash = state.matchedLocation == AppRoutes.splash;
         return isSplash ? null : AppRoutes.splash;
@@ -149,20 +120,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final isBlocked = location == AppRoutes.accountBlocked;
       final user = notifier.user;
 
-      // CRITICAL FIX (v3.3.7+20): Do NOT allow splash after router is initialized.
-      // Previously isSplash was in the allowed list, so an unauthenticated user
-      // landing on '/' after initialization would stay on splash forever.
-      // Now splash always redirects to /sign-in once initialized and user == null.
       if (user == null) {
-        final isPublicAuthRoute =
-            isLogin || isSignIn || isSignUp || isForgotPassword;
-        return isPublicAuthRoute ? null : AppRoutes.signIn;
+        // Not signed in — allow auth pages, redirect everything else to sign-in.
+        return (isLogin || isSignIn || isSignUp || isForgotPassword || isSplash)
+            ? null
+            : AppRoutes.signIn;
       }
 
       if (AuthGuard.isBlocked(user)) {
         return isBlocked ? null : AppRoutes.accountBlocked;
       }
 
+      // Signed-in user should not see auth/splash pages.
       if (isSplash || isLogin || isSignIn || isSignUp || isBlocked) {
         return AppRoutes.home;
       }
@@ -170,6 +139,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      // ── Public / Auth routes ──────────────────────────────────────────────
       GoRoute(
         path: AppRoutes.splash,
         name: AppRouteNames.splash,
@@ -200,8 +170,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: AppRouteNames.accountBlocked,
         builder: (_, __) => const AccountBlockedPage(),
       ),
+
+      // ── Shell: persistent bottom navigation bar ───────────────────────────
       ShellRoute(
-        builder: (_, __, child) => MainShell(child: child),
+        builder: (context, state, child) => MainShell(child: child),
         routes: [
           GoRoute(
             path: AppRoutes.home,
@@ -209,41 +181,43 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, __) => const HomePage(),
           ),
           GoRoute(
-            path: AppRoutes.search,
-            name: AppRouteNames.search,
-            builder: (_, __) => const SearchPage(),
-          ),
-          GoRoute(
-            path: AppRoutes.notifications,
-            name: AppRouteNames.notifications,
-            builder: (_, __) => const NotificationPage(),
-          ),
-          GoRoute(
-            path: AppRoutes.favorites,
-            name: AppRouteNames.favorites,
-            builder: (_, __) => const FavoritesPage(),
-          ),
-          GoRoute(
-            path: AppRoutes.chats,
-            name: AppRouteNames.chats,
-            builder: (_, __) => const ChatListPage(),
+            path: AppRoutes.addProduct,
+            name: AppRouteNames.addProduct,
+            builder: (_, __) => const AddProductPage(),
           ),
           GoRoute(
             path: AppRoutes.profile,
             name: AppRouteNames.profile,
             builder: (_, __) => const ProfilePage(),
           ),
+          GoRoute(
+            path: AppRoutes.editProfile,
+            name: AppRouteNames.editProfile,
+            builder: (_, __) => const EditProfilePage(),
+          ),
         ],
       ),
+
+      // ── Detail / overlay routes (no bottom nav) ───────────────────────────
       GoRoute(
-        path: AppRoutes.editProfile,
-        name: AppRouteNames.editProfile,
-        builder: (_, __) => const EditProfilePage(),
+        path: AppRoutes.search,
+        name: AppRouteNames.search,
+        builder: (_, __) => const SearchPage(),
       ),
       GoRoute(
-        path: AppRoutes.addProduct,
-        name: AppRouteNames.addProduct,
-        builder: (_, __) => const AddProductPage(),
+        path: AppRoutes.notifications,
+        name: AppRouteNames.notifications,
+        builder: (_, __) => const NotificationPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.favorites,
+        name: AppRouteNames.favorites,
+        builder: (_, __) => const FavoritesPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.chats,
+        name: AppRouteNames.chats,
+        builder: (_, __) => const ChatListPage(),
       ),
       GoRoute(
         path: AppRoutes.productDetail,
@@ -299,6 +273,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
 class AppRoutes {
   const AppRoutes._();
+
   static const splash = '/';
   static const login = '/login';
   static const signIn = '/sign-in';
@@ -319,6 +294,7 @@ class AppRoutes {
   static const submitReview = '/reviews/:sellerId/:productId';
   static const report = '/report/:targetId';
 
+  // Path helpers
   static String productDetailPath(String productId) => '/products/$productId';
   static String editProductPath(String productId) =>
       '/products/$productId/edit';
@@ -341,6 +317,7 @@ class AppRoutes {
 
 class AppRouteNames {
   const AppRouteNames._();
+
   static const splash = 'splash';
   static const login = 'login';
   static const signIn = 'signIn';

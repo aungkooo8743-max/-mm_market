@@ -45,16 +45,7 @@ Future<void> configureDependencies() async {
 
   // Firebase instances
   sl.registerLazySingleton<FirebaseAuth>(() => FirebaseAuth.instance);
-  // Offline persistence: cache up to unlimited Firestore data on-device so
-  // users can browse previously loaded products when Myanmar internet drops.
-  sl.registerLazySingleton<FirebaseFirestore>(() {
-    final fs = FirebaseFirestore.instance;
-    fs.settings = const Settings(
-      persistenceEnabled: true,
-      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-    );
-    return fs;
-  });
+  sl.registerLazySingleton<FirebaseFirestore>(() => FirebaseFirestore.instance);
   sl.registerLazySingleton<FirebaseStorage>(() => FirebaseStorage.instance);
   sl.registerLazySingleton<FirebaseMessaging>(() => FirebaseMessaging.instance);
   sl.registerLazySingleton<Connectivity>(Connectivity.new);

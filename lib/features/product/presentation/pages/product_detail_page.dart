@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/services/image_cache_service.dart';
 import '../../../../core/widgets/image_fullscreen_viewer.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,7 +12,6 @@ import '../../../../core/widgets/app_snackbar.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../chat/presentation/controllers/chat_controller.dart';
 import '../../../favorite/presentation/providers/favorite_providers.dart';
-import '../../../profile/presentation/providers/profile_providers.dart';
 import '../providers/product_providers.dart';
 
 class ProductDetailPage extends ConsumerStatefulWidget {
@@ -249,11 +247,11 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                       const SizedBox(height: 8),
                       Text(p.description),
                       const SizedBox(height: 24),
+                      if (!isOwner) ...[
                         _ActionButtonsRow(
                           isMy: isMy,
                           productId: p.id,
                           productTitle: p.title,
-                          sellerId: p.sellerId,
                           onChat: () async {
                             final roomId = await ref
                                 .read(chatControllerProvider.notifier)
@@ -279,6 +277,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                             }
                           },
                         ),
+                      ],
                       const SizedBox(height: 16),
                     ],
                   ),
@@ -296,7 +295,6 @@ class _ActionButtonsRow extends ConsumerWidget {
   final bool isMy;
   final String productId;
   final String productTitle;
-  final String sellerId;
   final VoidCallback onChat;
   final VoidCallback onShare;
 
@@ -304,37 +302,17 @@ class _ActionButtonsRow extends ConsumerWidget {
     required this.isMy,
     required this.productId,
     required this.productTitle,
-    required this.sellerId,
     required this.onChat,
     required this.onShare,
   });
-
-  Future<void> _launchCall(BuildContext context, String phone) async {
-    final cleaned = phone.replaceAll(RegExp(r'[\s\-()]'), '');
-    final uri = Uri(scheme: 'tel', path: cleaned);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    } else {
-      if (context.mounted) {
-        AppSnackbar.error(
-          context,
-          isMy ? 'ဖုန်းခေါ်ဆိုမှု မပြုလုပ်နိုင်ပါ' : 'Cannot launch phone call',
-        );
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isFavAsync = ref.watch(isFavoriteProvider(productId));
     final isFav = isFavAsync.valueOrNull ?? false;
-    // Fetch seller profile to get phone number for the call button
-    final sellerAsync = ref.watch(userProfileProvider(sellerId));
-    final sellerPhone = sellerAsync.valueOrNull?.phone ?? '';
 
     return Column(
       children: [
-        // ── Primary: Chat with Seller ─────────────────────────────────────
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
@@ -347,26 +325,8 @@ class _ActionButtonsRow extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 10),
-        // ── Secondary row: Call | Share | Save ────────────────────────────
         Row(
           children: [
-            // ── CALL BUTTON ────────────────────────────────────────────────
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: sellerPhone.isNotEmpty
-                    ? () => _launchCall(context, sellerPhone)
-                    : null,
-                icon: const Icon(Icons.phone_outlined),
-                label: Text(isMy ? 'ဖုန်းခေါ်ရန်' : 'Call'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  foregroundColor: Colors.green.shade700,
-                  side: BorderSide(color: Colors.green.shade400),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            // ── SHARE BUTTON ───────────────────────────────────────────────
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: onShare,
@@ -376,8 +336,7 @@ class _ActionButtonsRow extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(vertical: 12)),
               ),
             ),
-            const SizedBox(width: 8),
-            // ── SAVE / FAVOURITE BUTTON ────────────────────────────────────
+            const SizedBox(width: 10),
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: () =>
