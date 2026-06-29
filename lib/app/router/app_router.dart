@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// app_router.dart  —  MM Market  v3.3.7+17
+// app_router.dart  —  MM Market  v3.3.7+20
 //
 // DEFINITIVE FIX for splash-screen stuck bug:
 //
