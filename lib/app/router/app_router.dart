@@ -1,21 +1,23 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// app_router.dart  —  MM Market  v3.3.7+22
+// app_router.dart  —  MM Market  v3.3.7+23
 //
-// FIX: Replaced the broken `Provider<GoRouter>` that called `ref.watch` and
-// recreated a new GoRouter on every auth-state change (causing the redirect
-// guard to stay stuck on AsyncLoading forever) with the correct
-// GoRouter + Riverpod pattern:
+// FIX v3.3.7+23 (DEFINITIVE): Changed ref.watch → ref.read in appRouterProvider.
 //
-//   • RouterNotifier (ChangeNotifier + Riverpod ref.listen) holds the latest
-//     auth state and calls notifyListeners() whenever it changes.
-//   • GoRouter is created ONCE via `appRouterProvider` (a `Provider` that
-//     reads, not watches, the notifier) and uses `refreshListenable` so the
-//     redirect guard re-runs only when the notifier fires.
-//   • The redirect guard reads auth state from the notifier directly — no
-//     AsyncLoading check needed because the notifier only fires after the
-//     stream has emitted at least once.
-//   • SplashPage keeps its own 5-second hard timer as a belt-and-suspenders
-//     fallback.
+// ROOT CAUSE of splash-screen hang:
+//   appRouterProvider used ref.watch(routerNotifierProvider). In Riverpod,
+//   ref.watch() inside a Provider causes the provider to be INVALIDATED and
+//   RECREATED whenever the watched value changes. Since RouterNotifier calls
+//   notifyListeners() on every auth state change, GoRouter was being recreated
+//   from scratch on every auth event — resetting to initialLocation='/' (splash)
+//   each time, creating an infinite splash loop.
+//
+// THE FIX:
+//   • Use ref.read() in appRouterProvider so GoRouter is created ONCE.
+//   • RouterNotifier (ChangeNotifier) is passed as refreshListenable so the
+//     redirect guard re-runs on auth changes WITHOUT recreating the router.
+//   • app.dart correctly uses ref.watch(routerNotifierProvider) to keep the
+//     notifier alive, and ref.read(appRouterProvider) to get the stable router.
+//   • SplashPage 5-second hard timer is kept as a belt-and-suspenders fallback.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:flutter/material.dart';
@@ -97,7 +99,11 @@ final routerNotifierProvider = ChangeNotifierProvider<RouterNotifier>((ref) {
 /// Creates GoRouter ONCE. Uses refreshListenable so the redirect guard
 /// re-runs whenever RouterNotifier fires — without recreating the router.
 final appRouterProvider = Provider<GoRouter>((ref) {
-  final notifier = ref.watch(routerNotifierProvider);
+  // CRITICAL: Use ref.read (NOT ref.watch) so GoRouter is created ONCE.
+  // ref.watch would cause GoRouter to be recreated on every auth change,
+  // resetting navigation to initialLocation='/' and causing an infinite
+  // splash-screen loop.
+  final notifier = ref.read(routerNotifierProvider);
 
   return GoRouter(
     initialLocation: AppRoutes.splash,

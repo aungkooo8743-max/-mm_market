@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// splash_page.dart  —  MM Market  v3.3.7+22
+// splash_page.dart  —  MM Market  v3.3.7+23
 //
 // FIXES:
 //   1. RouterNotifier pattern: context.go() is no longer blocked by the
