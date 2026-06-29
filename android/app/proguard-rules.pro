@@ -164,16 +164,18 @@
 -dontwarn com.facebook.**
 
 # ============================================================
-# Security: Obfuscation hardening
-# ============================================================
-# Repackage all obfuscated classes into a single package
-# to make reverse engineering significantly harder
--repackageclasses 'x'
--allowaccessmodification
-
 # App entry points that must not be renamed
+# ============================================================
 -keep public class * extends android.app.Activity
 -keep public class * extends android.app.Application
 -keep public class * extends android.app.Service
 -keep public class * extends android.content.BroadcastReceiver
 -keep public class * extends android.content.ContentProvider
+
+# ============================================================
+# FIX v3.3.7+21: Removed -repackageclasses and -allowaccessmodification
+# These were causing runtime crashes in release builds by breaking
+# Firebase/Google Play Services class name resolution via reflection.
+# Firebase SDK uses Class.forName() and ServiceLoader which require
+# stable class names — repackaging breaks these lookups.
+# ============================================================
