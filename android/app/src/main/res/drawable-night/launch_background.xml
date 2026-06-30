@@ -1,12 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- MM Market Splash Screen Night Mode — Dark background -->
+<!-- Default Flutter splash night mode — system background color -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item>
-        <color android:color="#0D47A1"/>
-    </item>
-    <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@mipmap/ic_launcher_foreground" />
-    </item>
+    <item android:drawable="?android:colorBackground" />
 </layer-list>

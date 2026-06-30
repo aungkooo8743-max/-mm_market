@@ -47,12 +47,12 @@ Future<void> bootstrap(AppBuilder builder) async {
       await configureDependencies();
 
       if (sl.isRegistered<LoggerService>()) {
-        sl<LoggerService>().info('MM Market v3.3.7+23 initialized');
+        sl<LoggerService>().info('MM Market v3.3.7+24 initialized');
       }
 
       // Log app startup breadcrumb to Crashlytics (release only)
       if (!kDebugMode) {
-        crashlytics.log('MM Market v3.3.7+23 app started');
+        crashlytics.log('MM Market v3.3.7+24 app started');
       }
 
       runApp(builder());
