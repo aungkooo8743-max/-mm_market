@@ -14,11 +14,11 @@
       },
       "oauth_client": [
         {
-          "client_id": "805591336873-v0hbfi026ijro6e3bbhug3dohilcptci.apps.googleusercontent.com",
+          "client_id": "805591336873-n6tt1kmqdm4h9ese8hosaaa8uqvqn05j.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.mmmarket.app",
-            "certificate_hash": "2df0d227ec04a198efb499ad00156ae19c9d5610"
+            "certificate_hash": "906cb63a5d520cf1ccd08ebc8ba00e2ed6c0cd7a"
           }
         },
         {
@@ -26,7 +26,7 @@
           "client_type": 1,
           "android_info": {
             "package_name": "com.mmmarket.app",
-            "certificate_hash": "906cb63a5d520cf1ccd08ebc8ba00e2ed6c0cd7a"
+            "certificate_hash": "2df0d227ec04a198efb499ad00156ae19c9d5610"
           }
         },
         {

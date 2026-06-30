@@ -441,7 +441,12 @@ class AuthRepositoryImpl implements AuthRepository {
 
   Future<AppUser> _loadOrCreateUser(User firebaseUser) async {
     final users = firestoreService.collection(FirestoreCollections.users);
-    final doc = await users.doc(firebaseUser.uid).get();
+    // Apply an 8-second timeout so that a slow or unreachable Firestore
+    // does not block the authStateChanges stream indefinitely.
+    final doc = await users
+        .doc(firebaseUser.uid)
+        .get()
+        .timeout(const Duration(seconds: 8));
     final now = DateTime.now();
     if (doc.exists && doc.data() != null) {
       return AppUser.fromMap({...doc.data()!, 'uid': doc.id});
