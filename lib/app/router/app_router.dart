@@ -20,6 +20,8 @@
 //   • SplashPage 5-second hard timer is kept as a belt-and-suspenders fallback.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -56,27 +58,48 @@ import '../widgets/main_shell.dart';
 class RouterNotifier extends ChangeNotifier {
   AppUser? _user;
   bool _initialized = false;
+  Timer? _initTimer;
 
   AppUser? get user => _user;
   bool get initialized => _initialized;
 
+  /// Arm a 6-second safety timer so the redirect guard never blocks
+  /// navigation permanently if the auth stream stalls.
+  void armInitTimer() {
+    _initTimer ??= Timer(const Duration(seconds: 6), () {
+      if (!_initialized) {
+        _user = null;
+        _initialized = true;
+        notifyListeners();
+      }
+    });
+  }
+
   void update(AsyncValue<AppUser?> authAsync) {
     authAsync.when(
       data: (user) {
+        _initTimer?.cancel();
         _user = user;
         _initialized = true;
         notifyListeners();
       },
       error: (_, __) {
         // On error treat as signed-out so the user reaches sign-in.
+        _initTimer?.cancel();
         _user = null;
         _initialized = true;
         notifyListeners();
       },
       loading: () {
-        // Still loading — do not notify yet; SplashPage hard-timer handles timeout.
+        // Still loading — safety timer will force-initialize after 6 seconds.
       },
     );
+  }
+
+  @override
+  void dispose() {
+    _initTimer?.cancel();
+    super.dispose();
   }
 }
 
@@ -87,6 +110,9 @@ class RouterNotifier extends ChangeNotifier {
 /// Holds the RouterNotifier instance.
 final routerNotifierProvider = ChangeNotifierProvider<RouterNotifier>((ref) {
   final notifier = RouterNotifier();
+  // Arm the safety timer immediately so the redirect guard is never blocked
+  // permanently if the auth stream stalls or Firestore is unreachable.
+  notifier.armInitTimer();
   // Listen (not watch) so we don't rebuild this provider on every auth change.
   ref.listen<AsyncValue<AppUser?>>(authStateChangesProvider, (_, next) {
     notifier.update(next);
